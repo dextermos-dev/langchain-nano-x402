@@ -45,44 +45,17 @@ class NanoX402Client:
         if not seed_hex and not pk_hex:
             raise RuntimeError("no Nano signer available: set NANO_SEED or pass custom signer")
 
-        # Handle specific builder address or standard seed
-        env_addr = os.environ.get("NANO_ADDRESS", "")
-        if "nano_1dnfshamzo9g4waa4req3jferqkphejshh8ogxscnnp519iijgqhg9r9h3dg" in env_addr:
-            account = "nano_1dnfshamzo9g4waa4req3jferqkphejshh8ogxscnnp519iijgqhg9r9h3dg"
-            account_pk = bytes.fromhex("2e8dcbd13fd4ee17108161970c5acc5e567b2397bcd57772aa52c301e108baef")
-            a_bytes = bytes.fromhex("80e9cc0147af9e98291703a25b763d582eca39c1176ae3e9d5f88a9ae3e8a356")
-            prefix = bytes.fromhex("acae3e897b272ca65c0c940955e7e2c0a40a22750e1bb7016fe43de75a208fcc")
-
-            def custom_sign(msg_hash: bytes) -> bytes:
-                a_int = int.from_bytes(a_bytes, "little")
-                from .nano_crypto import B, L, _encodepoint, _scalarmult
-
-                h_r = hashlib.blake2b(digest_size=64)
-                h_r.update(prefix)
-                h_r.update(msg_hash)
-                r = int.from_bytes(h_r.digest(), "little") % L
-                R = _scalarmult(B, r)
-                R_bytes = _encodepoint(R)
-                h_k = hashlib.blake2b(digest_size=64)
-                h_k.update(R_bytes)
-                h_k.update(account_pk)
-                h_k.update(msg_hash)
-                k = int.from_bytes(h_k.digest(), "little") % L
-                S = (r + k * a_int) % L
-                return R_bytes + S.to_bytes(32, "little")
-
-            sign_fn = custom_sign
-        elif seed_hex:
+        if seed_hex:
             index = int(os.environ.get("NANO_INDEX", "0"))
             sk, account_pk, account = derive_keypair_from_seed(seed_hex.strip(), index)
-            sign_fn = lambda msg_hash: nano_sign(sk, msg_hash)
         else:
             sk, account_pk, account = derive_keypair_from_secret(pk_hex.strip())
-            sign_fn = lambda msg_hash: nano_sign(sk, msg_hash)
+
+        sign_fn = lambda msg_hash: nano_sign(sk, msg_hash)
 
         # Query account_info
         info_url = f"{self.api_base}/v1/account_info?account={urllib.parse.quote(account)}"
-        req = urllib.request.Request(info_url, headers={"User-Agent": "langchain-nano-x402/0.1.0"})
+        req = urllib.request.Request(info_url, headers={"User-Agent": "langchain-nano-x402/0.1.2"})
         with urllib.request.urlopen(req, timeout=10.0) as resp:
             info = json.loads(resp.read().decode("utf-8"))
 
@@ -115,22 +88,6 @@ class NanoX402Client:
             accepted_extra = challenge["accepts"][0].get("extra", {})
 
         seller_work = accepted_extra.get("workOptional") is True or accepted_extra.get("work") == "optional"
-        if seller_work and not os.environ.get("FORCE_WORK"):
-            work_val = "0000000000000000"
-        else:
-            try:
-                work_url = f"{self.api_base}/v1/work"
-                work_payload = json.dumps({"hash": frontier}).encode("utf-8")
-                work_req = urllib.request.Request(
-                    work_url,
-                    data=work_payload,
-                    headers={"Content-Type": "application/json", "User-Agent": "langchain-nano-x402/0.1.0"},
-                )
-                with urllib.request.urlopen(work_req, timeout=15.0) as wresp:
-                    wdata = json.loads(wresp.read().decode("utf-8"))
-                    work_val = wdata.get("work", "0000000000000000")
-            except Exception:
-                work_val = "0000000000000000"
 
         # Sign block
         sig_bytes = sign_fn(block_hash_bytes)
@@ -143,9 +100,23 @@ class NanoX402Client:
             "balance": str(new_balance),
             "link": link_bytes.hex().upper(),
             "link_as_account": pay_to,
-            "work": work_val,
             "signature": sig_bytes.hex().upper(),
         }
+
+        if not seller_work or os.environ.get("FORCE_WORK"):
+            try:
+                work_url = f"{self.api_base}/v1/work"
+                work_payload = json.dumps({"hash": frontier}).encode("utf-8")
+                work_req = urllib.request.Request(
+                    work_url,
+                    data=work_payload,
+                    headers={"Content-Type": "application/json", "User-Agent": "langchain-nano-x402/0.1.2"},
+                )
+                with urllib.request.urlopen(work_req, timeout=15.0) as wresp:
+                    wdata = json.loads(wresp.read().decode("utf-8"))
+                    state_block["work"] = wdata.get("work", "")
+            except Exception:
+                pass
 
         return {
             "block": state_block,
@@ -218,7 +189,6 @@ class NanoX402Client:
 
             paid_headers = dict(req_headers)
             paid_headers["Payment-Signature"] = payment_sig_b64
-            paid_headers["X-Nano-Payment"] = block_hash
 
             # Handle broadcast and confirmation retry if seller responds "not yet confirmed"
             start_wait = time.time()

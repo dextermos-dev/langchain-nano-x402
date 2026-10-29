@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langchain-nano-x402"
-version = "0.1.1"
+version = "0.1.2"
 description = "LangChain integration tool for autonomous Nano x402 resource purchasing with local payment guards"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,11 +19,15 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "langchain-core>=0.2.0",
+    "langchain-core==1.7.2",
     "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]
+agent = [
+    "langchain==1.4.7",
+    "langchain-openai>=0.3.0",
+]
 dev = [
     "pytest>=8.0",
     "pynacl>=1.5.0",
