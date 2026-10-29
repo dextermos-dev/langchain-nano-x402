@@ -18,7 +18,8 @@ Published for **Initiative #13 (Slot 1: LangChain)** under the [pursekeeper inte
   6. Origin redirect protection (never pays cross-origin redirects).
   7. Quote expiration and structural validation.
 - **Zero Secrets Leakage**: Private keys and seeds are injected via environment variables (`NANO_SEED` or `NANO_PRIVATE_KEY`) or passed as custom signers — never hardcoded, printed, or logged.
-- **Single-Attempt Semantics**: Signs exactly one send block per call. No automatic retry loop on non-2xx.
+- **Pure Python Nano Cryptography**: Native Ed25519-Blake2b signing and address encoding in Python without external C compiler requirements.
+- **Deterministic Driver**: Includes `example_run.py` to drive the tool through the loop without requiring an external model or OpenAI API key.
 
 ---
 
@@ -31,6 +32,38 @@ pip install langchain-nano-x402
 Or with `uv`:
 ```bash
 uv add langchain-nano-x402
+```
+
+---
+
+## Deterministic Execution (No LLM Required)
+
+You can drive `NanoX402Tool` directly without an OpenAI API key using the included scripted runner:
+
+```bash
+export NANO_SEED=<64_hex_chars>
+python example_run.py "https://pursekeeper.dev/v1/echo?msg=hello"
+```
+
+Or programmatically in Python:
+
+```python
+import os
+from langchain_nano_x402 import NanoX402Tool, PaymentGuardConfig
+
+# Configure local spend bounds
+guard_config = PaymentGuardConfig(
+    max_amount_raw_per_call=10**28,  # Cap: 0.01 XNO per call
+    cumulative_cap_raw=10**29,       # Cap: 0.1 XNO cumulative session spend
+    allowed_network="nano:mainnet",
+)
+
+# Instantiate tool
+tool = NanoX402Tool(guard_config=guard_config)
+
+# Execute paid call directly
+result = tool.invoke({"url": "https://pursekeeper.dev/v1/echo?msg=hello", "method": "GET"})
+print("Response:", result)
 ```
 
 ---
@@ -80,7 +113,7 @@ Run the complete offline test suite (100% mocked, 0 network access):
 pytest tests/ -v
 ```
 
-All 9 test cases assert strict rejection of malformed quotes, network mismatches, allowlist bypasses, per-call and cumulative cap breaches, duplicate invocations, and redirect origin mismatches.
+All 15 test cases assert strict rejection of malformed quotes, network mismatches, allowlist bypasses, per-call and cumulative cap breaches, duplicate invocations, redirect origin mismatches, and verify Nano cryptography and 402 challenge negotiation.
 
 ---
 

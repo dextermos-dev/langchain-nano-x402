@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "langchain-nano-x402"
-version = "0.1.0"
+version = "0.1.1"
 description = "LangChain integration tool for autonomous Nano x402 resource purchasing with local payment guards"
 readme = "README.md"
 requires-python = ">=3.10"
